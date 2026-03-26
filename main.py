@@ -279,8 +279,8 @@ with st.sidebar:
 
     model = st.selectbox(
         "Model",
-        ["llama-3.3-70b-versatile", "llama3-8b-8192", "mixtral-8x7b-32768"],
-        help="llama-3.3-70b is recommended for best results",
+        ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"],
+        help="llama-3.1-8b-instant is fast, llama-3.3-70b-versatile is more capable",
     )
 
     st.divider()
