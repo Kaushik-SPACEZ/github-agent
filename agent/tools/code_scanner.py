@@ -16,96 +16,157 @@ import json
 def run(repo_path, client, model):
     """Scan code repository for quality issues."""
     
-    # Collect all Python files
+    # Collect all Python files recursively
     python_files = []
-    src_path = os.path.join(repo_path, "src")
     
-    if os.path.exists(src_path):
-        for filename in os.listdir(src_path):
-            if filename.endswith(".py") and filename != "__init__.py":
-                filepath = os.path.join(src_path, filename)
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    python_files.append({
-                        "filename": filename,
-                        "content": content
-                    })
+    print(f"[DEBUG] Scanning repository: {repo_path}")
+    print(f"[DEBUG] Repository exists: {os.path.exists(repo_path)}")
     
-    # Build the analysis prompt
-    files_text = "\n\n".join([
-        f"FILE: {f['filename']}\n```python\n{f['content']}\n```"
-        for f in python_files
-    ])
+    for root, dirs, files in os.walk(repo_path):
+        # Skip common directories to ignore
+        dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', '.venv', 'venv']]
+        
+        for filename in files:
+            if filename.endswith('.py') and filename != '__init__.py':
+                filepath = os.path.join(root, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        # Get relative path for better display
+                        rel_path = os.path.relpath(filepath, repo_path)
+                        python_files.append({
+                            "filename": rel_path,
+                            "content": content
+                        })
+                        print(f"[DEBUG] Found Python file: {rel_path} ({len(content)} chars)")
+                except Exception as e:
+                    # Skip files that can't be read
+                    print(f"[DEBUG] Error reading {filepath}: {e}")
+                    continue
     
-    prompt = f"""You are a senior code reviewer analyzing Python code for quality issues.
-
-Analyze these Python files and identify specific issues:
+    print(f"[DEBUG] Total Python files found: {len(python_files)}")
+    
+    # If no files found, return empty result
+    if not python_files:
+        return json.dumps({
+            "issues": [],
+            "summary": {
+                "total_issues": 0,
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "files_analyzed": 0
+            }
+        }, indent=2)
+    
+    # Process files in batches to avoid token limits
+    # Reduce batch size to handle large files - process 1 file at a time
+    batch_size = 1
+    all_issues = []
+    files_analyzed = 0
+    
+    for i in range(0, len(python_files), batch_size):
+        batch = python_files[i:i + batch_size]
+        files_text = "\n\n".join([
+            f"FILE: {f['filename']}\n```python\n{f['content']}\n```"
+            for f in batch
+        ])
+        
+        # For very large files, truncate to first 2000 chars to stay under token limit
+        file_content = batch[0]['content']
+        if len(file_content) > 2000:
+            files_text = f"FILE: {batch[0]['filename']}\n```python\n{file_content[:2000]}\n... (file truncated for analysis)\n```"
+            print(f"[DEBUG] File {batch[0]['filename']} truncated from {len(file_content)} to 2000 chars")
+        
+        prompt = f"""Analyze this Python file for issues. Find AT LEAST 2-3 issues per file.
 
 {files_text}
 
-Identify these types of issues:
-1. **High Complexity**: Functions with > 10 conditional branches or deeply nested logic
-2. **Missing Error Handling**: File I/O, network calls, or database operations without try-except
-3. **Security Issues**: Hardcoded credentials, SQL injection risks, eval() usage, sensitive data in logs
-4. **Code Duplication**: Repeated logic that should be refactored
-5. **Missing Docstrings**: Functions without documentation
-6. **Input Validation**: Missing validation for user inputs or function parameters
+Check for:
+1. Security: hardcoded credentials, SQL injection, eval(), sensitive data in logs
+2. Error handling: missing try-except for file I/O, network, database ops
+3. Code quality: missing docstrings, type hints, magic numbers, long functions
+4. Best practices: naming, comments, duplication, unused imports
 
-For each issue found, provide:
-- type: "complexity" | "error_handling" | "security" | "duplication" | "documentation" | "validation"
-- severity: "critical" | "high" | "medium" | "low"
-- file: filename
-- location: "function_name" or "function_name:line_X"
-- description: Specific description of the issue
-- suggestion: How to fix it
-
-Return ONLY valid JSON (no markdown, no explanation):
+Return ONLY JSON:
 {{
   "issues": [
-    {{
-      "type": "security",
-      "severity": "critical",
-      "file": "main.py",
-      "location": "line 10",
-      "description": "Hardcoded database password 'admin123'",
-      "suggestion": "Use environment variables or secure vault for credentials"
-    }}
-  ],
-  "summary": {{
-    "total_issues": 15,
-    "critical": 3,
-    "high": 5,
-    "medium": 4,
-    "low": 3,
-    "files_analyzed": 3
-  }}
+    {{"type": "security", "severity": "critical", "file": "main.py", "location": "line 10", "description": "Issue here", "suggestion": "Fix here"}}
+  ]
 }}"""
 
-    # Call the LLM
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-        max_tokens=2000,
-    )
+        # Call the LLM for this batch
+        print(f"[DEBUG] Calling LLM for batch {i//batch_size + 1}...")
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+            
+            raw = response.choices[0].message.content
+            print(f"[DEBUG] LLM response received, length: {len(raw)} chars")
+            
+            # Parse JSON response - handle markdown code fences
+            raw = raw.strip()
+            
+            # Remove markdown code fences if present
+            if raw.startswith("```json"):
+                raw = raw[7:]  # Remove ```json
+            elif raw.startswith("```"):
+                raw = raw[3:]  # Remove ```
+            
+            if raw.endswith("```"):
+                raw = raw[:-3]  # Remove closing ```
+            
+            raw = raw.strip()
+            
+            # If response starts with text before JSON, extract just the JSON
+            if not raw.startswith("{"):
+                # Find the first { and extract from there
+                json_start = raw.find("{")
+                if json_start != -1:
+                    raw = raw[json_start:]
+            
+            # Parse and collect issues
+            batch_result = json.loads(raw)
+            print(f"[DEBUG] LLM returned {len(batch_result.get('issues', []))} issues")
+            print(f"[DEBUG] Raw LLM response preview: {raw[:500]}...")
+            
+            if "issues" in batch_result:
+                all_issues.extend(batch_result["issues"])
+                print(f"[DEBUG] Total issues collected so far: {len(all_issues)}")
+            files_analyzed += len(batch)
+            
+        except Exception as e:
+            # Skip this batch if it fails
+            print(f"[DEBUG] ERROR in batch processing: {e}")
+            print(f"[DEBUG] Exception type: {type(e).__name__}")
+            try:
+                print(f"[DEBUG] Raw response (if available): {raw[:500]}...")
+            except:
+                print(f"[DEBUG] Could not print raw response")
+            continue
     
-    raw = response.choices[0].message.content
+    # Aggregate results from all batches
+    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for issue in all_issues:
+        severity = issue.get("severity", "low")
+        if severity in severity_counts:
+            severity_counts[severity] += 1
     
-    # Parse JSON response
-    raw = raw.strip()
-    if raw.startswith("```"):
-        # Remove markdown code fences
-        lines = raw.split("\n")
-        raw = "\n".join(lines[1:-1]) if len(lines) > 2 else raw
+    final_result = {
+        "issues": all_issues,
+        "summary": {
+            "total_issues": len(all_issues),
+            "critical": severity_counts["critical"],
+            "high": severity_counts["high"],
+            "medium": severity_counts["medium"],
+            "low": severity_counts["low"],
+            "files_analyzed": files_analyzed
+        }
+    }
     
-    # Validate and return
-    try:
-        result = json.loads(raw)
-        return json.dumps(result, indent=2)
-    except json.JSONDecodeError:
-        # Fallback if JSON parsing fails
-        return json.dumps({
-            "issues": [],
-            "summary": {"total_issues": 0, "error": "Failed to parse LLM response"},
-            "raw_response": raw
-        }, indent=2)
+    return json.dumps(final_result, indent=2)

@@ -22,57 +22,67 @@ def run(repo_path, scanner_output, client, model):
     except:
         issues = []
     
-    # Collect source code
+    # Collect source code recursively
     python_files = []
-    src_path = os.path.join(repo_path, "src")
-    
-    if os.path.exists(src_path):
-        for filename in os.listdir(src_path):
-            if filename.endswith(".py") and filename != "__init__.py":
-                filepath = os.path.join(src_path, filename)
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    python_files.append({
-                        "filename": filename,
-                        "content": content
-                    })
-    
-    # Check existing tests
-    test_path = os.path.join(repo_path, "tests")
     existing_tests = []
-    if os.path.exists(test_path):
-        for filename in os.listdir(test_path):
-            if filename.startswith("test_") and filename.endswith(".py"):
-                filepath = os.path.join(test_path, filename)
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    existing_tests.append(f.read())
+    
+    for root, dirs, files in os.walk(repo_path):
+        # Skip common directories to ignore
+        dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'node_modules', '.venv', 'venv']]
+        
+        for filename in files:
+            if filename.endswith('.py') and filename != '__init__.py':
+                filepath = os.path.join(root, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        rel_path = os.path.relpath(filepath, repo_path)
+                        
+                        # Separate test files from source files
+                        if filename.startswith('test_') or 'test' in root:
+                            existing_tests.append(content)
+                        else:
+                            python_files.append({
+                                "filename": rel_path,
+                                "content": content
+                            })
+                except Exception as e:
+                    continue
+    
+    # If no source files, return empty
+    if not python_files:
+        return "# No Python files found to generate tests for"
+    
+    # Aggressive limits to stay under 6000 tokens
+    # Max 3 files, 800 chars each = ~2400 tokens for code
+    python_files = python_files[:3]
     
     files_text = "\n\n".join([
-        f"FILE: {f['filename']}\n```python\n{f['content']}\n```"
+        f"FILE: {f['filename']}\n```python\n{f['content'][:800]}\n```"  # Limit to 800 chars
         for f in python_files
     ])
     
-    existing_tests_text = "\n\n".join([
-        f"```python\n{test}\n```" for test in existing_tests
-    ]) if existing_tests else "No existing tests found."
+    # Skip existing tests to save tokens
+    existing_tests_text = "Existing tests not shown to save space."
     
+    # Limit issues to 3
     issues_text = "\n".join([
-        f"- {issue.get('file', 'unknown')}: {issue.get('description', 'No description')}"
-        for issue in issues[:10]  # Limit to first 10 issues
+        f"- {issue.get('file', 'unknown')}: {issue.get('description', 'No description')[:100]}"
+        for issue in issues[:3]  # Only 3 issues
     ])
     
     prompt = f"""You are a test engineer writing pytest test cases.
 
-SOURCE CODE:
+SOURCE CODE (showing {len(python_files)} files):
 {files_text}
 
 EXISTING TESTS:
 {existing_tests_text}
 
-ISSUES FOUND BY CODE SCANNER:
+TOP ISSUES FOUND:
 {issues_text}
 
-Generate comprehensive pytest test cases for functions that lack coverage. Focus on:
+Generate pytest test cases for the MOST CRITICAL untested functions. Focus on:
 1. Functions without any tests
 2. Functions with security issues (test edge cases and malicious inputs)
 3. Functions with high complexity (test all branches)

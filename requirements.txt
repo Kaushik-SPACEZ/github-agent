@@ -1,3 +1,13 @@
 streamlit
-openai
+groq
 python-dotenv
+PyGithub
+fastapi
+uvicorn
+python-multipart
+aiofiles
+
+# RAG Dependencies (Optional - for enhanced code analysis)
+faiss-cpu
+sentence-transformers
+numpy

@@ -22,6 +22,7 @@
 # ============================================================
 
 import time
+import os
 
 from agent.tools import code_scanner, test_case_generator, issue_prioritizer, report_writer
 
@@ -51,6 +52,13 @@ def run_plan(plan, repo_path, client, model, on_log):
     """Execute each step in the plan by routing to the correct tool."""
 
     results = {}
+    
+    on_log(f"[DEBUG] Repository path: {repo_path}")
+    on_log(f"[DEBUG] Checking if path exists: {os.path.exists(repo_path)}")
+    if os.path.exists(repo_path):
+        import glob
+        py_files = glob.glob(os.path.join(repo_path, "**/*.py"), recursive=True)
+        on_log(f"[DEBUG] Python files found: {len(py_files)}")
 
     for step in plan:
         tool = step["tool"]

@@ -1,25 +1,24 @@
 # ============================================================
-# main.py — Streamlit UI for Code Quality Monitor
+# main.py — Streamlit UI for Code Quality Monitor (Phase 4)
 # ============================================================
-# PURPOSE:
-#   This file is the user interface ONLY. It renders the Streamlit
-#   web app with step cards, a log box, and the code quality report.
-#   All agent logic lives in agent/loop.py — this file just handles
-#   display and user input.
-#
-# UI-ONLY RULE:
-#   Do not put agent logic, LLM calls, or tool functions in this
-#   file. main.py calls agent.loop.run() and displays the results.
-#   That's it.
+# PHASE 4: GitHub Integration + Beautiful UI
+# - GitHub repository input with file selection
+# - Original 5-step visualization (step cards)
+# - Activity log with color coding
+# - Tabbed results view
+# - Commit tracking for changed files
 # ============================================================
 
 import os
 import datetime
 import json
+import tempfile
 import streamlit as st
 from dotenv import load_dotenv
 from groq import Groq
 from agent import loop
+from agent.tools import github_integration
+from utils import CommitTracker
 
 # ── LOAD ENVIRONMENT ─────────────────────────────────────────────
 load_dotenv()
@@ -30,6 +29,24 @@ st.set_page_config(
     page_icon="🔍",
     layout="wide",
 )
+
+# ── INITIALIZE SESSION STATE ────────────────────────────────────
+if 'repo_files' not in st.session_state:
+    st.session_state.repo_files = []
+if 'changed_files' not in st.session_state:
+    st.session_state.changed_files = []
+if 'selected_files' not in st.session_state:
+    st.session_state.selected_files = []
+if 'current_commit' not in st.session_state:
+    st.session_state.current_commit = None
+if 'repo_url' not in st.session_state:
+    st.session_state.repo_url = ""
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 1
+if 'use_github' not in st.session_state:
+    st.session_state.use_github = False
+if 'temp_dir' not in st.session_state:
+    st.session_state.temp_dir = None
 
 # ── CUSTOM CSS ───────────────────────────────────────────────────
 st.markdown("""
@@ -138,24 +155,6 @@ st.markdown("""
         margin: 8px 0;
     }
 
-    /* Score card */
-    .score-card {
-        text-align: center;
-        padding: 20px;
-        border-radius: 12px;
-        font-weight: bold;
-    }
-    .score-pass {
-        background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-        border: 2px solid #4caf50;
-        color: #1b5e20;
-    }
-    .score-fail {
-        background: linear-gradient(135deg, #ffebee, #ffcdd2);
-        border: 2px solid #f44336;
-        color: #b71c1c;
-    }
-
     /* Tool pipeline */
     .pipeline-card {
         background-color: #f8f9fa;
@@ -205,7 +204,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<div class="brand-badge"><span>STUDAI FOUNDRY — AUTONOMOUS AI HACKATHON</span></div>',
+    '<div class="brand-badge"><span>STUDAI FOUNDRY — PHASE 4: GITHUB INTEGRATION</span></div>',
     unsafe_allow_html=True,
 )
 
@@ -245,7 +244,16 @@ with st.sidebar:
         value=os.getenv("GROQ_API_KEY", ""),
         help="Get your free key at console.groq.com",
     )
-    st.markdown("[🔑 Get your free Groq API key](https://console.groq.com)")
+    
+    github_token = st.text_input(
+        "GitHub Token (for GitHub repos)",
+        type="password",
+        value=os.getenv("GITHUB_TOKEN", ""),
+        help="Required only for GitHub repositories",
+    )
+    
+    st.markdown("[🔑 Get Groq API key](https://console.groq.com)")
+    st.markdown("[🔑 Get GitHub token](https://github.com/settings/tokens)")
 
     st.divider()
 
@@ -282,29 +290,204 @@ with st.sidebar:
         ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"],
         help="llama-3.1-8b-instant is fast, llama-3.3-70b-versatile is more capable",
     )
+    
+    st.divider()
+    
+    if st.session_state.repo_files:
+        st.markdown("### 📊 Repository Stats")
+        st.metric("Total Files", len(st.session_state.repo_files))
+        st.metric("Changed Files", len(st.session_state.changed_files))
+        st.metric("Selected", len(st.session_state.selected_files))
 
     st.divider()
     st.caption("Built for [StudAI Foundry](https://studai.one) — the national autonomous AI hackathon")
 
-# ── MAIN AREA — INPUT ────────────────────────────────────────────
-repo_path = st.text_input(
-    "Repository Path",
-    value="./mock_repo",
-    placeholder="./mock_repo or path to your repository",
-    help="Path to the code repository to analyze",
+# ── MAIN AREA — GITHUB OR LOCAL ─────────────────────────────────
+source_type = st.radio(
+    "Choose source:",
+    ["📦 GitHub Repository", "📁 Local Directory"],
+    horizontal=True
 )
 
-# ── RUN BUTTON ───────────────────────────────────────────────────
-col_run, col_example = st.columns([3, 1])
-with col_run:
-    run_button = st.button("🔍 Analyze Code Quality", use_container_width=True, type="primary")
-with col_example:
-    if st.button("💡 Use Example", use_container_width=True):
-        st.session_state["example_repo"] = "./mock_repo"
-        st.rerun()
+if source_type == "📦 GitHub Repository":
+    st.session_state.use_github = True
+    
+    # GitHub input
+    repo_url = st.text_input(
+        "GitHub Repository URL",
+        value=st.session_state.repo_url,
+        placeholder="https://github.com/owner/repo",
+        help="Enter the full GitHub repository URL",
+    )
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        fetch_button = st.button("🔍 Fetch Repository", use_container_width=True, type="primary")
+    with col2:
+        if st.button("💡 Use Example", use_container_width=True):
+            st.session_state.repo_url = "https://github.com/Kaushik-SPACEZ/github-agent"
+            st.rerun()
+    
+    # Fetch repository
+    if fetch_button:
+        if not api_key or not github_token:
+            st.error("⚠️ Both Groq API key and GitHub token are required!")
+            st.stop()
+        
+        if not repo_url.strip():
+            st.error("⚠️ Please enter a GitHub repository URL")
+            st.stop()
+        
+        with st.spinner("🔍 Fetching repository from GitHub..."):
+            try:
+                tracker = CommitTracker()
+                
+                # Get latest commit
+                commit_result = github_integration.get_latest_commit_sha(repo_url, github_token)
+                if not commit_result['success']:
+                    st.error(f"❌ Error: {commit_result['error']}")
+                    st.stop()
+                
+                current_commit = commit_result['sha']
+                is_first = tracker.is_first_analysis(repo_url)
+                
+                # Fetch all files
+                files_result = github_integration.list_all_code_files(repo_url, github_token)
+                if not files_result['success']:
+                    st.error(f"❌ Error: {files_result['error']}")
+                    st.stop()
+                
+                all_files = files_result['files']
+                
+                # Determine changed files
+                changed_files = []
+                if not is_first:
+                    last_commit = tracker.get_last_commit(repo_url)
+                    if last_commit:
+                        changes_result = github_integration.get_changed_files_between_commits(
+                            repo_url, last_commit, current_commit, github_token
+                        )
+                        if changes_result['success']:
+                            changed_files = [f['path'] for f in changes_result['modified']]
+                
+                # Store in session state
+                st.session_state.repo_files = all_files
+                st.session_state.changed_files = changed_files
+                st.session_state.selected_files = changed_files.copy()
+                st.session_state.current_commit = current_commit
+                st.session_state.repo_url = repo_url
+                st.session_state.current_page = 1
+                
+                if is_first:
+                    st.success(f"✅ First analysis! Fetched {len(all_files)} files from {files_result['repo_name']}")
+                else:
+                    st.success(f"✅ Fetched {len(all_files)} files. {len(changed_files)} files changed since last analysis.")
+                
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error fetching repository: {str(e)}")
+                st.stop()
+    
+    # File selection UI
+    if st.session_state.repo_files:
+        st.divider()
+        st.markdown("### 📁 Select Files to Analyze")
+        
+        # Search and filter
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            search_query = st.text_input("🔍 Search files", placeholder="e.g., main.py")
+        with col2:
+            file_extensions = list(set([f['extension'] for f in st.session_state.repo_files]))
+            file_type_filter = st.multiselect("Filter by type", options=file_extensions)
+        
+        # Filter files
+        filtered_files = st.session_state.repo_files
+        if search_query:
+            filtered_files = [f for f in filtered_files if search_query.lower() in f['path'].lower()]
+        if file_type_filter:
+            filtered_files = [f for f in filtered_files if f['extension'] in file_type_filter]
+        
+        # Pagination
+        items_per_page = 20
+        total_files = len(filtered_files)
+        total_pages = max(1, (total_files + items_per_page - 1) // items_per_page)
+        
+        # Quick actions
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            if st.button("✅ Select All", use_container_width=True):
+                st.session_state.selected_files = [f['path'] for f in filtered_files]
+                st.rerun()
+        with col2:
+            if st.button("🔴 Select Changed Only", use_container_width=True):
+                st.session_state.selected_files = st.session_state.changed_files.copy()
+                st.rerun()
+        with col3:
+            if st.button("❌ Clear Selection", use_container_width=True):
+                st.session_state.selected_files = []
+                st.rerun()
+        with col4:
+            page = st.number_input("Page", min_value=1, max_value=total_pages, value=st.session_state.current_page, label_visibility="collapsed")
+            st.session_state.current_page = page
+        
+        # Calculate page range
+        start_idx = (page - 1) * items_per_page
+        end_idx = min(start_idx + items_per_page, total_files)
+        page_files = filtered_files[start_idx:end_idx]
+        
+        st.caption(f"Showing {start_idx + 1}-{end_idx} of {total_files} files (Page {page}/{total_pages})")
+        
+        # File checkboxes
+        for file in page_files:
+            is_changed = file['path'] in st.session_state.changed_files
+            is_selected = file['path'] in st.session_state.selected_files
+            
+            badge = " 🔴 **Modified**" if is_changed else ""
+            label = f"`{file['path']}`{badge} ({file['size']} bytes)"
+            
+            checked = st.checkbox(label, value=is_selected, key=f"file_{file['path']}_{page}")
+            
+            if checked and file['path'] not in st.session_state.selected_files:
+                st.session_state.selected_files.append(file['path'])
+            elif not checked and file['path'] in st.session_state.selected_files:
+                st.session_state.selected_files.remove(file['path'])
+        
+        st.divider()
+        
+        if len(st.session_state.selected_files) > 0:
+            run_button = st.button(
+                f"🚀 Analyze {len(st.session_state.selected_files)} Selected Files",
+                use_container_width=True,
+                type="primary"
+            )
+        else:
+            st.warning("⚠️ No files selected. Select at least one file to analyze.")
+            run_button = False
+    else:
+        run_button = False
 
-if "example_repo" in st.session_state:
-    repo_path = st.session_state.pop("example_repo")
+else:
+    # Local directory mode
+    st.session_state.use_github = False
+    repo_path = st.text_input(
+        "Repository Path",
+        value="./mock_repo",
+        placeholder="./mock_repo or path to your repository",
+        help="Path to the code repository to analyze",
+    )
+    
+    col_run, col_example = st.columns([3, 1])
+    with col_run:
+        run_button = st.button("🔍 Analyze Code Quality", use_container_width=True, type="primary")
+    with col_example:
+        if st.button("💡 Use Example", use_container_width=True):
+            st.session_state["example_repo"] = "./mock_repo"
+            st.rerun()
+    
+    if "example_repo" in st.session_state:
+        repo_path = st.session_state.pop("example_repo")
 
 st.divider()
 
@@ -386,18 +569,49 @@ if run_button:
         )
         st.stop()
 
-    if not repo_path.strip():
-        st.error(
-            "⚠️ **No repository path entered.** Enter a path above, or click **💡 Use Example** for a demo."
-        )
-        st.stop()
+    # Prepare repository path
+    if st.session_state.use_github:
+        # Fetch files from GitHub
+        with st.spinner("📥 Fetching file contents from GitHub..."):
+            temp_dir = tempfile.mkdtemp(prefix='github_analysis_')
+            
+            try:
+                for file_path in st.session_state.selected_files:
+                    content_result = github_integration.fetch_file_content(
+                        st.session_state.repo_url,
+                        file_path,
+                        st.session_state.current_commit,
+                        github_token
+                    )
+                    
+                    if content_result['success']:
+                        full_path = os.path.join(temp_dir, file_path)
+                        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                        with open(full_path, 'w', encoding='utf-8') as f:
+                            f.write(content_result['content'])
+                
+                repo_path = temp_dir
+                st.session_state.temp_dir = temp_dir
+                
+            except Exception as e:
+                st.error(f"❌ Error fetching files: {str(e)}")
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                st.stop()
+    else:
+        # Local directory
+        if not repo_path.strip():
+            st.error(
+                "⚠️ **No repository path entered.** Enter a path above, or click **💡 Use Example** for a demo."
+            )
+            st.stop()
 
-    if not os.path.exists(repo_path):
-        st.error(
-            f"⚠️ **Repository not found:** `{repo_path}`\n\n"
-            "Make sure the path is correct and the repository exists."
-        )
-        st.stop()
+        if not os.path.exists(repo_path):
+            st.error(
+                f"⚠️ **Repository not found:** `{repo_path}`\n\n"
+                "Make sure the path is correct and the repository exists."
+            )
+            st.stop()
 
     # ── INITIALISE STATE ─────────────────────────────────────────
     client = Groq(api_key=api_key)
@@ -440,6 +654,20 @@ if run_button:
     with st.spinner("🤖 Agent is analyzing code quality autonomously — watch the steps light up..."):
         try:
             results = loop.run(repo_path, client, model, on_step, on_log)
+            
+            # Store results in session state so they persist across reruns
+            st.session_state.analysis_results = results
+            st.session_state.loops_used = current_loop[0]
+            
+            # Save commit SHA if GitHub
+            if st.session_state.use_github:
+                tracker = CommitTracker()
+                tracker.save_commit(
+                    st.session_state.repo_url,
+                    st.session_state.current_commit,
+                    st.session_state.selected_files
+                )
+            
         except Exception as e:
             error_msg = str(e)
             if "api_key" in error_msg.lower() or "auth" in error_msg.lower():
@@ -462,10 +690,18 @@ if run_button:
                     f"❌ **Agent error:** `{error_msg}`\n\nCheck your API key and internet connection."
                 )
             st.stop()
+        finally:
+            # Cleanup temp directory
+            if st.session_state.temp_dir and os.path.exists(st.session_state.temp_dir):
+                import shutil
+                shutil.rmtree(st.session_state.temp_dir, ignore_errors=True)
+                st.session_state.temp_dir = None
 
-    # ── DISPLAY RESULTS ──────────────────────────────────────────
+# ── DISPLAY RESULTS (from session state or fresh run) ──────────────
+if 'analysis_results' in st.session_state and st.session_state.analysis_results:
+    results = st.session_state.analysis_results
+    
     st.divider()
-
     st.markdown("## 📊 Code Quality Analysis Report")
 
     if results.get("report_writer"):
@@ -504,30 +740,193 @@ if run_button:
 
             st.divider()
 
-            # Show prioritized issues
+            # Parse all issues for Jira integration
+            try:
+                scanner_data = json.loads(scanner_output)
+                all_issues = scanner_data.get("issues", [])
+            except:
+                all_issues = []
+
+            # Initialize session state for Jira
+            if 'selected_issues_for_jira' not in st.session_state:
+                st.session_state.selected_issues_for_jira = {}
+            if 'issue_assignees' not in st.session_state:
+                st.session_state.issue_assignees = {}
+
+            # Jira Integration Section
+            if all_issues:
+                st.markdown("### 🎫 Jira Integration")
+                
+                # Test Jira connection
+                jira_config = {
+                    'JIRA_BASE_URL': os.getenv('JIRA_BASE_URL', ''),
+                    'JIRA_EMAIL': os.getenv('JIRA_EMAIL', ''),
+                    'JIRA_API_TOKEN': os.getenv('JIRA_API_TOKEN', ''),
+                    'JIRA_PROJECT_KEY': os.getenv('JIRA_PROJECT_KEY', '')
+                }
+                
+                jira_enabled = all(jira_config.values())
+                
+                if jira_enabled:
+                    from agent.tools import jira_integration
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.success("✅ Jira configured")
+                    with col2:
+                        if st.button("🔗 Test Connection"):
+                            with st.spinner("Testing Jira connection..."):
+                                test_result = jira_integration.test_jira_connection(jira_config)
+                                if test_result['success']:
+                                    st.success(test_result['message'])
+                                else:
+                                    st.error(test_result['message'])
+                else:
+                    st.warning("⚠️ Jira not configured. Add credentials to .env file.")
+                
+                st.divider()
+
+            # Show prioritized issues with Jira checkboxes
             try:
                 priority_data = json.loads(priority_output)
                 
                 if priority_data.get("critical"):
                     st.markdown("### ⚠️ Critical Issues")
-                    for issue in priority_data["critical"]:
-                        with st.expander(f"🔴 {issue.get('file', 'Unknown')} - {issue.get('issue', 'No description')}"):
-                            st.markdown(f"**Impact:** {issue.get('impact', 'N/A')}")
-                            st.markdown(f"**Effort:** {issue.get('effort', 'N/A')}")
+                    for idx, issue in enumerate(priority_data["critical"]):
+                        issue_key = f"critical_{idx}"
+                        
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            # Use on_change callback to update session state
+                            def update_selection(key=issue_key):
+                                st.session_state.selected_issues_for_jira[key] = st.session_state[f"jira_check_{key}"]
+                            
+                            selected = st.checkbox(
+                                f"🔴 {issue.get('file', 'Unknown')} - {issue.get('issue', 'No description')}",
+                                key=f"jira_check_{issue_key}",
+                                value=st.session_state.selected_issues_for_jira.get(issue_key, False),
+                                on_change=update_selection,
+                                args=(issue_key,)
+                            )
+                        
+                        with col2:
+                            assignee = st.text_input(
+                                "Assignee",
+                                key=f"assignee_{issue_key}",
+                                placeholder="email/id",
+                                label_visibility="collapsed",
+                                value=st.session_state.issue_assignees.get(issue_key, "")
+                            )
+                            if assignee != st.session_state.issue_assignees.get(issue_key, ""):
+                                st.session_state.issue_assignees[issue_key] = assignee
+                        
+                        if selected:
+                            with st.expander("View Details"):
+                                st.markdown(f"**Impact:** {issue.get('impact', 'N/A')}")
+                                st.markdown(f"**Effort:** {issue.get('effort', 'N/A')}")
+                                st.markdown(f"**Description:** {issue.get('issue', 'N/A')}")
 
                 if priority_data.get("high"):
                     st.markdown("### 🔶 High Priority Issues")
-                    for issue in priority_data["high"][:5]:  # Show top 5
-                        with st.expander(f"🟠 {issue.get('file', 'Unknown')} - {issue.get('issue', 'No description')}"):
-                            st.markdown(f"**Impact:** {issue.get('impact', 'N/A')}")
-                            st.markdown(f"**Effort:** {issue.get('effort', 'N/A')}")
+                    for idx, issue in enumerate(priority_data["high"]):
+                        issue_key = f"high_{idx}"
+                        
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            # Use on_change callback to update session state
+                            def update_selection(key=issue_key):
+                                st.session_state.selected_issues_for_jira[key] = st.session_state[f"jira_check_{key}"]
+                            
+                            selected = st.checkbox(
+                                f"🟠 {issue.get('file', 'Unknown')} - {issue.get('issue', 'No description')}",
+                                key=f"jira_check_{issue_key}",
+                                value=st.session_state.selected_issues_for_jira.get(issue_key, False),
+                                on_change=update_selection,
+                                args=(issue_key,)
+                            )
+                        
+                        with col2:
+                            assignee = st.text_input(
+                                "Assignee",
+                                key=f"assignee_{issue_key}",
+                                placeholder="email/id",
+                                label_visibility="collapsed",
+                                value=st.session_state.issue_assignees.get(issue_key, "")
+                            )
+                            if assignee != st.session_state.issue_assignees.get(issue_key, ""):
+                                st.session_state.issue_assignees[issue_key] = assignee
+                        
+                        if selected:
+                            with st.expander("View Details"):
+                                st.markdown(f"**Impact:** {issue.get('impact', 'N/A')}")
+                                st.markdown(f"**Effort:** {issue.get('effort', 'N/A')}")
+                                st.markdown(f"**Description:** {issue.get('issue', 'N/A')}")
+
+                # Push to Jira button
+                selected_count = sum(1 for v in st.session_state.selected_issues_for_jira.values() if v)
+                
+                if selected_count > 0 and jira_enabled:
+                    st.divider()
+                    if st.button(f"🎫 Push {selected_count} Issue(s) to Jira", type="primary", use_container_width=True):
+                        from agent.tools import jira_integration
+                        
+                        with st.spinner(f"Creating {selected_count} Jira ticket(s)..."):
+                            # Collect selected issues
+                            issues_to_create = []
+                            assignees_map = {}
+                            
+                            for issue_key, is_selected in st.session_state.selected_issues_for_jira.items():
+                                if is_selected:
+                                    severity, idx = issue_key.split('_')
+                                    idx = int(idx)
+                                    
+                                    if severity == 'critical':
+                                        issue_data = priority_data["critical"][idx]
+                                    else:
+                                        issue_data = priority_data["high"][idx]
+                                    
+                                    # Find matching issue from scanner output
+                                    for scanner_issue in all_issues:
+                                        if (scanner_issue.get('file') == issue_data.get('file') and 
+                                            scanner_issue.get('description', '')[:50] in issue_data.get('issue', '')):
+                                            issues_to_create.append(scanner_issue)
+                                            
+                                            assignee = st.session_state.issue_assignees.get(issue_key, "").strip()
+                                            if assignee:
+                                                assignees_map[len(issues_to_create) - 1] = assignee
+                                            break
+                            
+                            # Create tickets
+                            results = jira_integration.create_bulk_tickets(
+                                issues_to_create,
+                                jira_config,
+                                assignees_map
+                            )
+                            
+                            # Display results
+                            success_count = sum(1 for r in results if r['result']['success'])
+                            
+                            if success_count > 0:
+                                st.success(f"✅ Successfully created {success_count} Jira ticket(s)!")
+                                
+                                for r in results:
+                                    if r['result']['success']:
+                                        ticket_key = r['result']['ticket_key']
+                                        ticket_url = r['result']['ticket_url']
+                                        st.markdown(f"- [{ticket_key}]({ticket_url}): {r['issue'].get('description', 'No description')[:80]}...")
+                            
+                            if success_count < len(results):
+                                st.error(f"❌ Failed to create {len(results) - success_count} ticket(s)")
+                                for r in results:
+                                    if not r['result']['success']:
+                                        st.error(f"Error: {r['result'].get('error', 'Unknown error')}")
 
                 if priority_data.get("recommendations"):
                     st.markdown("### 💡 Recommendations")
                     for rec in priority_data["recommendations"]:
                         st.info(rec)
-            except:
-                st.warning("Could not parse prioritized issues")
+            except Exception as e:
+                st.warning(f"Could not parse prioritized issues: {str(e)}")
 
         # ── TAB 2: GENERATED TESTS ────────────────────────────────
         with tab_tests:
@@ -581,15 +980,16 @@ if run_button:
 
             st.markdown("---")
 
-            # Loops used
-            loops_used = current_loop[0]
-            st.markdown(f"**Autonomous loops used:** {loops_used} of 3")
-            if loops_used == 1:
-                st.success("Report passed quality review on the first attempt!")
-            else:
-                st.info(
-                    f"The agent self-corrected {loops_used - 1} time(s) based on reviewer feedback."
-                )
+            # Loops used - get from session state if available
+            if 'loops_used' in st.session_state:
+                loops_used = st.session_state.loops_used
+                st.markdown(f"**Autonomous loops used:** {loops_used} of 3")
+                if loops_used == 1:
+                    st.success("Report passed quality review on the first attempt!")
+                else:
+                    st.info(
+                        f"The agent self-corrected {loops_used - 1} time(s) based on reviewer feedback."
+                    )
 
             st.markdown("---")
 
@@ -606,7 +1006,7 @@ if run_button:
 
     # ── POST-RUN EDUCATION ───────────────────────────────────────
     with st.expander("🎓 What just happened? (The autonomy explained)"):
-        loops_used = current_loop[0]
+        loops_used = st.session_state.get('loops_used', 1)
         st.markdown(f"""
 **The agent ran {loops_used} loop{'s' if loops_used > 1 else ''}** to analyze your code. Here's what happened:
 
