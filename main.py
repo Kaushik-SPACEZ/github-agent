@@ -316,11 +316,47 @@ st.markdown("""
         box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
     }
     
-    /* Sidebar - Violet theme */
+    /* Sidebar - Violet theme with better text visibility */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0a0015 0%, #1a0033 100%);
         border-right: 2px solid rgba(139, 92, 246, 0.3);
         box-shadow: 5px 0 30px rgba(139, 92, 246, 0.2);
+    }
+    section[data-testid="stSidebar"] * {
+        color: #e9d5ff !important;
+    }
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3 {
+        color: #ffffff !important;
+    }
+    section[data-testid="stSidebar"] label {
+        color: #c4b5fd !important;
+        font-weight: 600 !important;
+    }
+    section[data-testid="stSidebar"] .stMarkdown {
+        color: #e9d5ff !important;
+    }
+    /* Fix code blocks in sidebar - dark background with light text */
+    section[data-testid="stSidebar"] code {
+        background: rgba(76, 29, 149, 0.4) !important;
+        color: #ffffff !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+        border: 1px solid rgba(167, 139, 250, 0.3) !important;
+        font-weight: 600 !important;
+    }
+    section[data-testid="stSidebar"] pre {
+        background: rgba(10, 0, 30, 0.9) !important;
+        border: 2px solid rgba(139, 92, 246, 0.4) !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
+    }
+    section[data-testid="stSidebar"] pre code {
+        background: transparent !important;
+        color: #c4b5fd !important;
+        border: none !important;
+        padding: 0 !important;
     }
     
     /* Buttons - Neon violet */
@@ -354,17 +390,87 @@ st.markdown("""
         box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
     }
     
-    /* Input fields - Cyberpunk style */
+    /* Input fields - Cyberpunk style with better visibility */
     .stTextInput>div>div>input, .stNumberInput>div>div>input {
-        background: rgba(10, 0, 30, 0.8);
-        border: 2px solid rgba(139, 92, 246, 0.4);
-        border-radius: 0 10px 0 10px;
-        color: #e9d5ff;
-        font-family: 'Rajdhani', sans-serif;
+        background: rgba(10, 0, 30, 0.9) !important;
+        border: 2px solid rgba(139, 92, 246, 0.5) !important;
+        border-radius: 0 10px 0 10px !important;
+        color: #ffffff !important;
+        font-family: 'Rajdhani', sans-serif !important;
+        font-weight: 500 !important;
+    }
+    .stTextInput>div>div>input::placeholder {
+        color: #a78bfa !important;
+        opacity: 0.7 !important;
     }
     .stTextInput>div>div>input:focus, .stNumberInput>div>div>input:focus {
-        border-color: #a78bfa;
-        box-shadow: 0 0 20px rgba(167, 139, 250, 0.4);
+        border-color: #a78bfa !important;
+        box-shadow: 0 0 20px rgba(167, 139, 250, 0.4) !important;
+        color: #ffffff !important;
+    }
+    
+    /* Radio buttons - Better visibility */
+    .stRadio label {
+        color: #e9d5ff !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Checkboxes - Better visibility */
+    .stCheckbox label {
+        color: #e9d5ff !important;
+    }
+    
+    /* Select boxes - Better visibility */
+    .stSelectbox label {
+        color: #c4b5fd !important;
+        font-weight: 600 !important;
+    }
+    .stSelectbox>div>div {
+        background: rgba(10, 0, 30, 0.9) !important;
+        border: 2px solid rgba(139, 92, 246, 0.5) !important;
+        color: #ffffff !important;
+    }
+    
+    /* Multiselect - Better visibility */
+    .stMultiSelect label {
+        color: #c4b5fd !important;
+        font-weight: 600 !important;
+    }
+    .stMultiSelect>div>div {
+        background: rgba(10, 0, 30, 0.9) !important;
+        border: 2px solid rgba(139, 92, 246, 0.5) !important;
+        color: #ffffff !important;
+    }
+    
+    /* Text areas - Better visibility */
+    .stTextArea label {
+        color: #c4b5fd !important;
+        font-weight: 600 !important;
+    }
+    .stTextArea textarea {
+        background: rgba(10, 0, 30, 0.9) !important;
+        border: 2px solid rgba(139, 92, 246, 0.5) !important;
+        color: #ffffff !important;
+    }
+    
+    /* General text - Better visibility */
+    p, span, div {
+        color: #e9d5ff;
+    }
+    
+    /* Headers - Bright white */
+    h1, h2, h3, h4, h5, h6 {
+        color: #ffffff !important;
+    }
+    
+    /* Links - Violet with better visibility */
+    a {
+        color: #c4b5fd !important;
+        text-decoration: none !important;
+    }
+    a:hover {
+        color: #e9d5ff !important;
+        text-shadow: 0 0 10px rgba(196, 181, 253, 0.6);
     }
     
     /* Tabs - Violet theme */
@@ -418,11 +524,7 @@ st.markdown("""
 # ── HEADER & BRANDING ───────────────────────────────────────────
 st.markdown('<div class="brand-title">Code Quality Monitor</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="brand-sub">Autonomous AI Agent for Code Analysis</div>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    '<div class="brand-badge"><span>STUDAI FOUNDRY — PHASE 4: GITHUB INTEGRATION</span></div>',
+    '<div class="brand-badge"><span>AUTONOMOUS AI AGENT FOR CODE ANALYSIS<br>STUDAI FOUNDRY — PHASE 4: GITHUB INTEGRATION</span></div>',
     unsafe_allow_html=True,
 )
 
