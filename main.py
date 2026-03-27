@@ -51,148 +51,366 @@ if 'temp_dir' not in st.session_state:
 # ── CUSTOM CSS ───────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Step cards */
+    /* Cyberpunk Violet Theme - Unique Design */
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap');
+    
+    .stApp {
+        background: linear-gradient(135deg, #0a0015 0%, #1a0033 50%, #0f001a 100%);
+        background-attachment: fixed;
+    }
+    
+    /* Animated background grid */
+    .stApp::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: 
+            linear-gradient(rgba(138, 43, 226, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(138, 43, 226, 0.1) 1px, transparent 1px);
+        background-size: 50px 50px;
+        pointer-events: none;
+        z-index: 0;
+    }
+    
+    /* Step cards - Cyberpunk style with violet glow */
     .step-card {
-        border-radius: 10px;
-        padding: 16px 8px;
-        text-align: center;
-        margin: 4px;
+        border-radius: 0 15px 0 15px;
+        padding: 24px 16px;
+        text-align: left;
+        margin: 8px;
         font-size: 14px;
-        min-height: 110px;
-        transition: all 0.3s ease;
+        min-height: 130px;
+        transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        position: relative;
+        overflow: hidden;
+        font-family: 'Rajdhani', sans-serif;
+        backdrop-filter: blur(10px);
+    }
+    .step-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        background: linear-gradient(180deg, #8b5cf6, #a78bfa);
     }
     .step-pending {
-        background-color: #f0f0f0;
-        border: 2px solid #cccccc;
-        color: #888888;
+        background: rgba(30, 20, 50, 0.6);
+        border: 2px solid rgba(139, 92, 246, 0.3);
+        color: #9ca3af;
+        box-shadow: inset 0 0 20px rgba(139, 92, 246, 0.1);
     }
     .step-active {
-        background-color: #fff8e1;
-        border: 2px solid #ffc107;
-        color: #f57f17;
-        animation: pulse 1.5s ease-in-out infinite;
+        background: rgba(76, 29, 149, 0.4);
+        border: 2px solid #a78bfa;
+        color: #e9d5ff;
+        animation: glowPulse 2s ease-in-out infinite;
+        box-shadow: 0 0 30px rgba(167, 139, 250, 0.6), inset 0 0 30px rgba(167, 139, 250, 0.2);
+        transform: scale(1.05);
     }
-    @keyframes pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.3); }
-        50% { box-shadow: 0 0 12px 4px rgba(255, 193, 7, 0.3); }
+    @keyframes glowPulse {
+        0%, 100% { 
+            box-shadow: 0 0 30px rgba(167, 139, 250, 0.6), inset 0 0 30px rgba(167, 139, 250, 0.2);
+            border-color: #a78bfa;
+        }
+        50% { 
+            box-shadow: 0 0 50px rgba(167, 139, 250, 0.9), inset 0 0 40px rgba(167, 139, 250, 0.3);
+            border-color: #c4b5fd;
+        }
     }
     .step-done {
-        background-color: #e8f5e9;
-        border: 2px solid #4caf50;
-        color: #1b5e20;
+        background: rgba(5, 150, 105, 0.3);
+        border: 2px solid #10b981;
+        color: #d1fae5;
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
     }
     .step-failed {
-        background-color: #ffebee;
-        border: 2px solid #f44336;
-        color: #b71c1c;
+        background: rgba(153, 27, 27, 0.3);
+        border: 2px solid #ef4444;
+        color: #fecaca;
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
     }
     .step-skipped {
-        background-color: #f3e5f5;
-        border: 2px solid #9c27b0;
-        color: #4a148c;
+        background: rgba(76, 29, 149, 0.2);
+        border: 2px solid #6b21a8;
+        color: #c4b5fd;
+        box-shadow: 0 0 15px rgba(107, 33, 168, 0.3);
     }
 
-    /* Activity log */
+    /* Activity log - Futuristic terminal */
     .log-box {
-        background-color: #1E1E2E;
-        color: #cdd6f4;
+        background: rgba(10, 0, 30, 0.9);
+        color: #c4b5fd;
         font-family: 'Courier New', monospace;
-        font-size: 12px;
-        padding: 12px;
-        border-radius: 8px;
-        max-height: 220px;
+        font-size: 13px;
+        padding: 20px;
+        border-radius: 0 20px 0 20px;
+        max-height: 280px;
         overflow-y: auto;
         white-space: pre-wrap;
         word-wrap: break-word;
+        border: 2px solid rgba(167, 139, 250, 0.4);
+        box-shadow: 0 0 30px rgba(167, 139, 250, 0.3), inset 0 0 30px rgba(10, 0, 30, 0.8);
+        position: relative;
     }
-    .log-time { color: #6c7086; }
-    .log-tool { color: #89b4fa; }
-    .log-pass { color: #a6e3a1; }
-    .log-fail { color: #f38ba8; }
-    .log-loop { color: #cba6f7; font-weight: bold; }
+    .log-box::before {
+        content: '> SYSTEM LOG';
+        position: absolute;
+        top: -12px;
+        left: 20px;
+        background: #1a0033;
+        padding: 2px 12px;
+        color: #a78bfa;
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 2px;
+    }
+    .log-time { color: #6b7280; }
+    .log-tool { color: #a78bfa; font-weight: 700; text-shadow: 0 0 10px rgba(167, 139, 250, 0.5); }
+    .log-pass { color: #34d399; font-weight: 700; text-shadow: 0 0 10px rgba(52, 211, 153, 0.5); }
+    .log-fail { color: #f87171; font-weight: 700; text-shadow: 0 0 10px rgba(248, 113, 113, 0.5); }
+    .log-loop { color: #c4b5fd; font-weight: bold; font-size: 15px; text-shadow: 0 0 15px rgba(196, 181, 253, 0.8); }
 
-    /* Branding */
+    /* Branding - Cyberpunk violet gradient */
     .brand-title {
         text-align: center;
-        font-size: 2.4em;
-        font-weight: 800;
-        background: linear-gradient(135deg, #dc2626, #f97316);
+        font-size: 3.5em;
+        font-weight: 900;
+        font-family: 'Orbitron', sans-serif;
+        background: linear-gradient(135deg, #8b5cf6 0%, #c4b5fd 50%, #ffffff 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 0;
+        margin-bottom: 12px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.6));
+        animation: titleGlow 3s ease-in-out infinite;
+    }
+    @keyframes titleGlow {
+        0%, 100% { filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.6)); }
+        50% { filter: drop-shadow(0 0 35px rgba(139, 92, 246, 0.9)); }
     }
     .brand-sub {
         text-align: center;
-        font-size: 1.05em;
-        color: #64748b;
-        margin-top: 2px;
-        margin-bottom: 4px;
+        font-size: 1.2em;
+        color: #c4b5fd;
+        margin-top: 8px;
+        margin-bottom: 12px;
+        font-weight: 300;
+        font-family: 'Rajdhani', sans-serif;
+        letter-spacing: 2px;
+        text-transform: uppercase;
     }
     .brand-badge {
         text-align: center;
-        margin-bottom: 16px;
+        margin-bottom: 32px;
     }
     .brand-badge span {
-        background-color: #dc2626;
+        background: linear-gradient(135deg, #6b21a8 0%, #8b5cf6 100%);
         color: white;
-        padding: 4px 14px;
-        border-radius: 20px;
-        font-size: 0.78em;
-        font-weight: 600;
-        letter-spacing: 0.5px;
+        padding: 8px 24px;
+        border-radius: 0 15px 0 15px;
+        font-size: 0.75em;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        font-family: 'Orbitron', sans-serif;
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.6);
+        border: 2px solid rgba(167, 139, 250, 0.5);
     }
 
-    /* Loop counter */
+    /* Loop counter - Futuristic */
     .loop-counter {
         text-align: center;
-        background-color: #1E1E2E;
-        color: #cba6f7;
-        padding: 8px 16px;
-        border-radius: 8px;
-        font-family: 'Courier New', monospace;
+        background: rgba(76, 29, 149, 0.4);
+        color: #e9d5ff;
+        padding: 16px 28px;
+        border-radius: 0 20px 0 20px;
+        font-family: 'Orbitron', sans-serif;
         font-weight: bold;
-        font-size: 14px;
-        margin: 8px 0;
+        font-size: 16px;
+        margin: 16px 0;
+        border: 2px solid #a78bfa;
+        box-shadow: 0 0 30px rgba(167, 139, 250, 0.5), inset 0 0 20px rgba(76, 29, 149, 0.3);
+        letter-spacing: 3px;
     }
 
-    /* Tool pipeline */
+    /* Tool pipeline - Asymmetric cards */
     .pipeline-card {
-        background-color: #f8f9fa;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 12px;
+        background: rgba(30, 20, 50, 0.6);
+        border: 2px solid rgba(139, 92, 246, 0.5);
+        border-radius: 0 15px 0 15px;
+        padding: 20px;
         text-align: center;
         font-size: 13px;
+        color: #e9d5ff;
+        transition: all 0.4s ease;
+        font-family: 'Rajdhani', sans-serif;
+        position: relative;
+        overflow: hidden;
+    }
+    .pipeline-card::after {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: linear-gradient(45deg, transparent, rgba(167, 139, 250, 0.1), transparent);
+        transform: rotate(45deg);
+        transition: all 0.6s ease;
+    }
+    .pipeline-card:hover {
+        border-color: #c4b5fd;
+        box-shadow: 0 0 30px rgba(196, 181, 253, 0.6);
+        transform: translateY(-5px) scale(1.02);
+    }
+    .pipeline-card:hover::after {
+        left: 100%;
     }
     
-    /* Issue badge */
+    /* Issue badges - Neon style */
     .issue-badge {
         display: inline-block;
-        padding: 4px 12px;
-        border-radius: 16px;
-        font-size: 12px;
-        font-weight: 600;
-        margin: 2px;
+        padding: 8px 16px;
+        border-radius: 0 12px 0 12px;
+        font-size: 11px;
+        font-weight: 700;
+        margin: 4px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-family: 'Orbitron', sans-serif;
+        position: relative;
     }
     .badge-critical {
-        background-color: #fee2e2;
-        color: #991b1b;
-        border: 1px solid #fca5a5;
+        background: rgba(153, 27, 27, 0.4);
+        color: #fecaca;
+        border: 2px solid #ef4444;
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
+        animation: criticalBlink 1.5s ease-in-out infinite;
+    }
+    @keyframes criticalBlink {
+        0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.6); }
+        50% { box-shadow: 0 0 35px rgba(239, 68, 68, 0.9); }
     }
     .badge-high {
-        background-color: #fed7aa;
-        color: #9a3412;
-        border: 1px solid #fdba74;
+        background: rgba(146, 64, 14, 0.4);
+        color: #fed7aa;
+        border: 2px solid #f59e0b;
+        box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
     }
     .badge-medium {
-        background-color: #fef3c7;
-        color: #92400e;
-        border: 1px solid #fde68a;
+        background: rgba(113, 63, 18, 0.4);
+        color: #fef3c7;
+        border: 2px solid #fbbf24;
+        box-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
     }
     .badge-low {
-        background-color: #dbeafe;
-        color: #1e40af;
-        border: 1px solid #93c5fd;
+        background: rgba(30, 58, 138, 0.4);
+        color: #dbeafe;
+        border: 2px solid #3b82f6;
+        box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+    }
+    
+    /* Sidebar - Violet theme */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0a0015 0%, #1a0033 100%);
+        border-right: 2px solid rgba(139, 92, 246, 0.3);
+        box-shadow: 5px 0 30px rgba(139, 92, 246, 0.2);
+    }
+    
+    /* Buttons - Neon violet */
+    .stButton>button {
+        border-radius: 0 12px 0 12px;
+        font-weight: 700;
+        font-family: 'Rajdhani', sans-serif;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+    .stButton>button[kind="primary"] {
+        background: linear-gradient(135deg, #6b21a8 0%, #8b5cf6 100%);
+        border: 2px solid #a78bfa;
+        color: white;
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.5);
+    }
+    .stButton>button[kind="primary"]:hover {
+        box-shadow: 0 0 40px rgba(139, 92, 246, 0.8);
+        transform: translateY(-3px);
+        border-color: #c4b5fd;
+    }
+    .stButton>button:not([kind="primary"]) {
+        background: rgba(30, 20, 50, 0.6);
+        border: 2px solid rgba(139, 92, 246, 0.4);
+        color: #c4b5fd;
+    }
+    .stButton>button:not([kind="primary"]):hover {
+        border-color: #a78bfa;
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+    }
+    
+    /* Input fields - Cyberpunk style */
+    .stTextInput>div>div>input, .stNumberInput>div>div>input {
+        background: rgba(10, 0, 30, 0.8);
+        border: 2px solid rgba(139, 92, 246, 0.4);
+        border-radius: 0 10px 0 10px;
+        color: #e9d5ff;
+        font-family: 'Rajdhani', sans-serif;
+    }
+    .stTextInput>div>div>input:focus, .stNumberInput>div>div>input:focus {
+        border-color: #a78bfa;
+        box-shadow: 0 0 20px rgba(167, 139, 250, 0.4);
+    }
+    
+    /* Tabs - Violet theme */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: rgba(10, 0, 30, 0.6);
+        padding: 8px;
+        border-radius: 0 15px 0 15px;
+        border: 2px solid rgba(139, 92, 246, 0.3);
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: rgba(30, 20, 50, 0.6);
+        border-radius: 0 10px 0 10px;
+        color: #c4b5fd;
+        border: 2px solid transparent;
+        font-family: 'Rajdhani', sans-serif;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #6b21a8 0%, #8b5cf6 100%);
+        border-color: #a78bfa;
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+    }
+    
+    /* Metrics - Futuristic cards */
+    [data-testid="stMetricValue"] {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 2em;
+        color: #c4b5fd;
+        text-shadow: 0 0 15px rgba(196, 181, 253, 0.6);
+    }
+    
+    /* Scrollbar - Violet theme */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: rgba(10, 0, 30, 0.8);
+    }
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #6b21a8, #8b5cf6);
+        border-radius: 5px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, #8b5cf6, #a78bfa);
     }
 </style>
 """, unsafe_allow_html=True)
