@@ -337,14 +337,15 @@ st.markdown("""
     section[data-testid="stSidebar"] .stMarkdown {
         color: #e9d5ff !important;
     }
-    /* Fix code blocks in sidebar - dark background with light text */
+    /* Fix code blocks in sidebar - violet background with white text */
     section[data-testid="stSidebar"] code {
-        background: rgba(76, 29, 149, 0.4) !important;
+        background: linear-gradient(135deg, #6b21a8 0%, #8b5cf6 100%) !important;
         color: #ffffff !important;
-        padding: 2px 6px !important;
-        border-radius: 4px !important;
-        border: 1px solid rgba(167, 139, 250, 0.3) !important;
-        font-weight: 600 !important;
+        padding: 4px 10px !important;
+        border-radius: 0 8px 0 8px !important;
+        border: 2px solid rgba(167, 139, 250, 0.5) !important;
+        font-weight: 700 !important;
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.4) !important;
     }
     section[data-testid="stSidebar"] pre {
         background: rgba(10, 0, 30, 0.9) !important;
@@ -463,6 +464,17 @@ st.markdown("""
         color: #ffffff !important;
     }
     
+    /* File name badges in main content - Violet theme */
+    .stCheckbox code, code {
+        background: linear-gradient(135deg, #6b21a8 0%, #8b5cf6 100%) !important;
+        color: #ffffff !important;
+        padding: 4px 10px !important;
+        border-radius: 0 8px 0 8px !important;
+        border: 2px solid rgba(167, 139, 250, 0.5) !important;
+        font-weight: 700 !important;
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.4) !important;
+    }
+    
     /* Links - Violet with better visibility */
     a {
         color: #c4b5fd !important;
@@ -524,7 +536,7 @@ st.markdown("""
 # ── HEADER & BRANDING ───────────────────────────────────────────
 st.markdown('<div class="brand-title">Code Quality Monitor</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="brand-badge"><span>AUTONOMOUS AI AGENT FOR CODE ANALYSIS<br>STUDAI FOUNDRY — PHASE 4: GITHUB INTEGRATION</span></div>',
+    '<div class="brand-sub">Autonomous AI Agent for Code Analysis</div>',
     unsafe_allow_html=True,
 )
 

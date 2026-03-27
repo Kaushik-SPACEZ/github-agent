@@ -130,6 +130,22 @@ Return ONLY JSON:
                 if json_start != -1:
                     raw = raw[json_start:]
             
+            # Find the last } to handle extra text after JSON
+            # Count braces to find the matching closing brace
+            brace_count = 0
+            json_end = -1
+            for idx, char in enumerate(raw):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        json_end = idx + 1
+                        break
+            
+            if json_end != -1:
+                raw = raw[:json_end]
+            
             # Parse and collect issues
             batch_result = json.loads(raw)
             print(f"[DEBUG] LLM returned {len(batch_result.get('issues', []))} issues")
