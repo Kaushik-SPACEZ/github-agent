@@ -17,7 +17,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from groq import Groq
 from agent import loop
-from agent.tools import github_integration
+from agent.tools import github_integration, code_improver
 from utils import CommitTracker
 
 # ── LOAD ENVIRONMENT ─────────────────────────────────────────────
@@ -465,7 +465,7 @@ st.markdown("""
     }
     
     /* File name badges in main content - Violet theme */
-    .stCheckbox code, code {
+    .stCheckbox code {
         background: linear-gradient(135deg, #6b21a8 0%, #8b5cf6 100%) !important;
         color: #ffffff !important;
         padding: 4px 10px !important;
@@ -473,6 +473,69 @@ st.markdown("""
         border: 2px solid rgba(167, 139, 250, 0.5) !important;
         font-weight: 700 !important;
         box-shadow: 0 0 15px rgba(139, 92, 246, 0.4) !important;
+    }
+    
+    /* Code blocks - Dark background with light text for readability */
+    pre {
+        background: rgba(20, 20, 30, 0.95) !important;
+        border: 2px solid rgba(139, 92, 246, 0.4) !important;
+        border-radius: 8px !important;
+        padding: 16px !important;
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.2) !important;
+    }
+    
+    pre code {
+        background: transparent !important;
+        color: #e0e0e0 !important;
+        font-family: 'Courier New', monospace !important;
+        font-size: 13px !important;
+        line-height: 1.6 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* Inline code in markdown - keep violet style */
+    .stMarkdown code:not(pre code) {
+        background: linear-gradient(135deg, #6b21a8 0%, #8b5cf6 100%) !important;
+        color: #ffffff !important;
+        padding: 2px 6px !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+    }
+    
+    /* JSON viewer - Dark background with readable colors */
+    .stJson {
+        background: rgba(20, 20, 30, 0.95) !important;
+        border: 2px solid rgba(139, 92, 246, 0.4) !important;
+        border-radius: 8px !important;
+        padding: 16px !important;
+    }
+    
+    /* JSON viewer text colors for better readability */
+    .stJson pre {
+        background: transparent !important;
+        color: #e0e0e0 !important;
+    }
+    
+    .stJson .json-key {
+        color: #a78bfa !important;
+    }
+    
+    .stJson .json-string {
+        color: #86efac !important;
+    }
+    
+    .stJson .json-number {
+        color: #fbbf24 !important;
+    }
+    
+    .stJson .json-boolean {
+        color: #60a5fa !important;
+    }
+    
+    .stJson .json-null {
+        color: #9ca3af !important;
     }
     
     /* Links - Violet with better visibility */
@@ -640,6 +703,79 @@ source_type = st.radio(
     ["📦 GitHub Repository", "📁 Local Directory"],
     horizontal=True
 )
+
+# ── DOCUMENT UPLOAD SECTION ─────────────────────────────────────
+st.divider()
+st.markdown("### 📄 Upload Project Documents (Optional)")
+st.markdown("Upload relevant documents like project plans, technical specs, architecture docs, etc. These will be indexed by RAG to provide better context during analysis.")
+
+uploaded_docs = st.file_uploader(
+    "Choose document files",
+    type=['md', 'txt', 'pdf', 'docx', 'doc', 'json', 'yaml', 'yml', 'rst'],
+    accept_multiple_files=True,
+    help="Supported formats: Markdown, Text, PDF, Word, JSON, YAML"
+)
+
+# Store uploaded documents in session state
+if 'uploaded_documents' not in st.session_state:
+    st.session_state.uploaded_documents = []
+
+if uploaded_docs:
+    st.session_state.uploaded_documents = []
+    
+    for doc in uploaded_docs:
+        try:
+            # Read document content based on file type
+            file_extension = doc.name.split('.')[-1].lower()
+            
+            if file_extension in ['md', 'txt', 'json', 'yaml', 'yml', 'rst']:
+                # Text-based files
+                content = doc.read().decode('utf-8')
+            elif file_extension == 'pdf':
+                # PDF files - basic text extraction
+                try:
+                    import PyPDF2
+                    pdf_reader = PyPDF2.PdfReader(doc)
+                    content = ""
+                    for page in pdf_reader.pages:
+                        content += page.extract_text() + "\n"
+                except ImportError:
+                    st.warning(f"⚠️ PyPDF2 not installed. Skipping {doc.name}. Install with: pip install PyPDF2")
+                    continue
+            elif file_extension in ['docx', 'doc']:
+                # Word documents
+                try:
+                    import docx
+                    doc_file = docx.Document(doc)
+                    content = "\n".join([para.text for para in doc_file.paragraphs])
+                except ImportError:
+                    st.warning(f"⚠️ python-docx not installed. Skipping {doc.name}. Install with: pip install python-docx")
+                    continue
+            else:
+                st.warning(f"⚠️ Unsupported file type: {doc.name}")
+                continue
+            
+            st.session_state.uploaded_documents.append({
+                'filename': doc.name,
+                'content': content,
+                'size': len(content)
+            })
+            
+        except Exception as e:
+            st.error(f"❌ Error reading {doc.name}: {str(e)}")
+    
+    if st.session_state.uploaded_documents:
+        st.success(f"✅ Successfully loaded {len(st.session_state.uploaded_documents)} document(s)")
+        
+        # Show uploaded documents
+        with st.expander("📋 View Uploaded Documents"):
+            for doc in st.session_state.uploaded_documents:
+                st.markdown(f"**{doc['filename']}** ({doc['size']} characters)")
+                with st.expander(f"Preview: {doc['filename']}"):
+                    preview = doc['content'][:500] + "..." if len(doc['content']) > 500 else doc['content']
+                    st.text(preview)
+
+st.divider()
 
 if source_type == "📦 GitHub Repository":
     st.session_state.use_github = True
@@ -985,7 +1121,9 @@ if run_button:
     # ── RUN THE LOOP ─────────────────────────────────────────────
     with st.spinner("🤖 Agent is analyzing code quality autonomously — watch the steps light up..."):
         try:
-            results = loop.run(repo_path, client, model, on_step, on_log)
+            # Pass uploaded documents to the loop for RAG indexing
+            uploaded_docs = st.session_state.get('uploaded_documents', None)
+            results = loop.run(repo_path, client, model, on_step, on_log, uploaded_docs)
             
             # Store results in session state so they persist across reruns
             st.session_state.analysis_results = results
@@ -1085,44 +1223,71 @@ if 'analysis_results' in st.session_state and st.session_state.analysis_results:
             if 'issue_assignees' not in st.session_state:
                 st.session_state.issue_assignees = {}
 
-            # Jira Integration Section
-            if all_issues:
-                st.markdown("### 🎫 Jira Integration")
-                
-                # Test Jira connection
-                jira_config = {
-                    'JIRA_BASE_URL': os.getenv('JIRA_BASE_URL', ''),
-                    'JIRA_EMAIL': os.getenv('JIRA_EMAIL', ''),
-                    'JIRA_API_TOKEN': os.getenv('JIRA_API_TOKEN', ''),
-                    'JIRA_PROJECT_KEY': os.getenv('JIRA_PROJECT_KEY', '')
-                }
-                
-                jira_enabled = all(jira_config.values())
-                
-                if jira_enabled:
-                    from agent.tools import jira_integration
-                    
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.success("✅ Jira configured")
-                    with col2:
-                        if st.button("🔗 Test Connection"):
-                            with st.spinner("Testing Jira connection..."):
-                                test_result = jira_integration.test_jira_connection(jira_config)
-                                if test_result['success']:
-                                    st.success(test_result['message'])
-                                else:
-                                    st.error(test_result['message'])
-                else:
-                    st.warning("⚠️ Jira not configured. Add credentials to .env file.")
-                
-                st.divider()
+            # Jira configuration
+            jira_config = {
+                'JIRA_BASE_URL': os.getenv('JIRA_BASE_URL', ''),
+                'JIRA_EMAIL': os.getenv('JIRA_EMAIL', ''),
+                'JIRA_API_TOKEN': os.getenv('JIRA_API_TOKEN', ''),
+                'JIRA_PROJECT_KEY': os.getenv('JIRA_PROJECT_KEY', '')
+            }
+            jira_enabled = all(jira_config.values())
 
             # Show prioritized issues with Jira checkboxes
             try:
                 priority_data = json.loads(priority_output)
                 
-                if priority_data.get("critical"):
+                # Check if we have any prioritized issues
+                has_critical = priority_data.get("critical") and len(priority_data.get("critical", [])) > 0
+                has_high = priority_data.get("high") and len(priority_data.get("high", [])) > 0
+                has_medium = priority_data.get("medium") and len(priority_data.get("medium", [])) > 0
+                has_low = priority_data.get("low") and len(priority_data.get("low", [])) > 0
+                has_prioritized = has_critical or has_high or has_medium or has_low
+                
+                # If no prioritized issues but we have issues from scanner, show them
+                if not has_prioritized and all_issues:
+                    st.warning("⚠️ Issues were detected but not yet prioritized. Showing all issues from scanner:")
+                    for idx, issue in enumerate(all_issues):
+                        issue_key = f"scanner_{idx}"
+                        
+                        severity_emoji = {
+                            'critical': '🔴',
+                            'high': '🟠',
+                            'medium': '🟡',
+                            'low': '🔵'
+                        }.get(issue.get('severity', 'medium').lower(), '⚪')
+                        
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            def update_selection(key=issue_key):
+                                st.session_state.selected_issues_for_jira[key] = st.session_state[f"jira_check_{key}"]
+                            
+                            selected = st.checkbox(
+                                f"{severity_emoji} {issue.get('file', 'Unknown')} - {issue.get('description', 'No description')[:100]}",
+                                key=f"jira_check_{issue_key}",
+                                value=st.session_state.selected_issues_for_jira.get(issue_key, False),
+                                on_change=update_selection,
+                                args=(issue_key,)
+                            )
+                        
+                        with col2:
+                            assignee = st.text_input(
+                                "Assignee",
+                                key=f"assignee_{issue_key}",
+                                placeholder="email/id",
+                                label_visibility="collapsed",
+                                value=st.session_state.issue_assignees.get(issue_key, "")
+                            )
+                            if assignee != st.session_state.issue_assignees.get(issue_key, ""):
+                                st.session_state.issue_assignees[issue_key] = assignee
+                        
+                        if selected:
+                            with st.expander("View Details"):
+                                st.markdown(f"**Type:** {issue.get('type', 'N/A')}")
+                                st.markdown(f"**Severity:** {issue.get('severity', 'N/A')}")
+                                st.markdown(f"**Line:** {issue.get('line', 'N/A')}")
+                                st.markdown(f"**Description:** {issue.get('description', 'N/A')}")
+                
+                if has_critical:
                     st.markdown("### ⚠️ Critical Issues")
                     for idx, issue in enumerate(priority_data["critical"]):
                         issue_key = f"critical_{idx}"
@@ -1158,7 +1323,7 @@ if 'analysis_results' in st.session_state and st.session_state.analysis_results:
                                 st.markdown(f"**Effort:** {issue.get('effort', 'N/A')}")
                                 st.markdown(f"**Description:** {issue.get('issue', 'N/A')}")
 
-                if priority_data.get("high"):
+                if has_high:
                     st.markdown("### 🔶 High Priority Issues")
                     for idx, issue in enumerate(priority_data["high"]):
                         issue_key = f"high_{idx}"
@@ -1253,12 +1418,164 @@ if 'analysis_results' in st.session_state and st.session_state.analysis_results:
                                     if not r['result']['success']:
                                         st.error(f"Error: {r['result'].get('error', 'Unknown error')}")
 
+                if has_medium:
+                    st.markdown("### 🟡 Medium Priority Issues")
+                    for idx, issue in enumerate(priority_data["medium"]):
+                        issue_key = f"medium_{idx}"
+                        
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            def update_selection(key=issue_key):
+                                st.session_state.selected_issues_for_jira[key] = st.session_state[f"jira_check_{key}"]
+                            
+                            selected = st.checkbox(
+                                f"🟡 {issue.get('file', 'Unknown')} - {issue.get('issue', 'No description')}",
+                                key=f"jira_check_{issue_key}",
+                                value=st.session_state.selected_issues_for_jira.get(issue_key, False),
+                                on_change=update_selection,
+                                args=(issue_key,)
+                            )
+                        
+                        with col2:
+                            assignee = st.text_input(
+                                "Assignee",
+                                key=f"assignee_{issue_key}",
+                                placeholder="email/id",
+                                label_visibility="collapsed",
+                                value=st.session_state.issue_assignees.get(issue_key, "")
+                            )
+                            if assignee != st.session_state.issue_assignees.get(issue_key, ""):
+                                st.session_state.issue_assignees[issue_key] = assignee
+                        
+                        if selected:
+                            with st.expander("View Details"):
+                                st.markdown(f"**Impact:** {issue.get('impact', 'N/A')}")
+                                st.markdown(f"**Effort:** {issue.get('effort', 'N/A')}")
+                                st.markdown(f"**Description:** {issue.get('issue', 'N/A')}")
+                
+                if has_low:
+                    st.markdown("### 🔵 Low Priority Issues")
+                    for idx, issue in enumerate(priority_data["low"]):
+                        with st.expander(f"🔵 {issue.get('file', 'Unknown')} - {issue.get('issue', 'No description')}"):
+                            st.markdown(f"**Impact:** {issue.get('impact', 'N/A')}")
+                            st.markdown(f"**Effort:** {issue.get('effort', 'N/A')}")
+                            st.markdown(f"**Description:** {issue.get('issue', 'N/A')}")
+                
                 if priority_data.get("recommendations"):
                     st.markdown("### 💡 Recommendations")
                     for rec in priority_data["recommendations"]:
                         st.info(rec)
+                
+                # Code Improver Section
+                st.divider()
+                st.markdown("### 🔧 AI Code Improver")
+                st.markdown("Automatically generate improved code that fixes all detected issues using AI.")
+                
+                # Group issues by file
+                files_with_issues = {}
+                for issue in all_issues:
+                    file_path = issue.get('file', 'Unknown')
+                    if file_path != 'Unknown' and file_path not in files_with_issues:
+                        files_with_issues[file_path] = []
+                    if file_path != 'Unknown':
+                        files_with_issues[file_path].append(issue)
+                
+                # File selection for improvement
+                if files_with_issues:
+                    selected_files_to_improve = st.multiselect(
+                        "Select files to improve:",
+                        options=list(files_with_issues.keys()),
+                        help="Choose one or more files to generate improved versions"
+                    )
+                    
+                    # Show button only if files are selected
+                    if selected_files_to_improve:
+                        if st.button("🚀 Generate Improved Code", type="primary", use_container_width=True):
+                            client = Groq(api_key=api_key)
+                            
+                            for file_path in selected_files_to_improve:
+                                with st.spinner(f"🤖 AI is improving {file_path}..."):
+                                    try:
+                                        # Read original file
+                                        if st.session_state.use_github:
+                                            content_result = github_integration.fetch_file_content(
+                                                st.session_state.repo_url,
+                                                file_path,
+                                                st.session_state.current_commit or "",
+                                                github_token
+                                            )
+                                            original_code = content_result['content'] if content_result['success'] else ""
+                                        else:
+                                            full_path = os.path.join(repo_path, file_path)
+                                            with open(full_path, 'r', encoding='utf-8') as f:
+                                                original_code = f.read()
+                                        
+                                        # Get issues for this file
+                                        file_issues = files_with_issues[file_path]
+                                        
+                                        # Generate improved code
+                                        result_json = code_improver.run(file_path, original_code, file_issues, client, model)
+                                        result = json.loads(result_json)
+                                        
+                                        # Display results
+                                        st.success(f"✅ Generated improved version of `{file_path}`")
+                                        
+                                        with st.expander(f"📝 View Improved Code: {file_path}", expanded=True):
+                                            col1, col2 = st.columns(2)
+                                            
+                                            with col1:
+                                                st.markdown("**🔧 Changes Made:**")
+                                                for change in result.get('changes_made', []):
+                                                    st.markdown(f"- {change}")
+                                            
+                                            with col2:
+                                                st.markdown("**✅ Issues Fixed:**")
+                                                for issue_fixed in result.get('issues_fixed', []):
+                                                    st.markdown(f"- ✓ {issue_fixed}")
+                                            
+                                            st.divider()
+                                            st.markdown("**💻 Improved Code:**")
+                                            st.code(result.get('improved_code', ''), language="python")
+                                            
+                                            # Download button
+                                            st.download_button(
+                                                label=f"📥 Download Improved {os.path.basename(file_path)}",
+                                                data=result.get('improved_code', ''),
+                                                file_name=f"improved_{os.path.basename(file_path)}",
+                                                mime="text/plain",
+                                                use_container_width=True
+                                            )
+                                    
+                                    except Exception as e:
+                                        st.error(f"❌ Error improving {file_path}: {str(e)}")
+                else:
+                    st.info("ℹ️ No issues detected. No files need improvement.")
+                
+                # Show debug info if no issues displayed
+                if not has_prioritized:
+                    with st.expander("🔍 Debug: Why are issues not showing?"):
+                        st.markdown("**Priority data structure:**")
+                        st.json(priority_data)
+                        st.markdown("**Scanner issues count:**")
+                        st.write(f"Total issues from scanner: {len(all_issues)}")
+                        
             except Exception as e:
-                st.warning(f"Could not parse prioritized issues: {str(e)}")
+                st.error(f"❌ Error parsing prioritized issues: {str(e)}")
+                st.markdown("**Showing raw scanner issues instead:**")
+                
+                for idx, issue in enumerate(all_issues):
+                    severity_emoji = {
+                        'critical': '🔴',
+                        'high': '🟠',
+                        'medium': '🟡',
+                        'low': '🔵'
+                    }.get(issue.get('severity', 'medium').lower(), '⚪')
+                    
+                    with st.expander(f"{severity_emoji} {issue.get('file', 'Unknown')} - {issue.get('description', 'No description')[:80]}"):
+                        st.markdown(f"**Type:** {issue.get('type', 'N/A')}")
+                        st.markdown(f"**Severity:** {issue.get('severity', 'N/A')}")
+                        st.markdown(f"**Line:** {issue.get('line', 'N/A')}")
+                        st.markdown(f"**Description:** {issue.get('description', 'N/A')}")
 
         # ── TAB 2: GENERATED TESTS ────────────────────────────────
         with tab_tests:
