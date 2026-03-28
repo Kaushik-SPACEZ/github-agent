@@ -20,8 +20,17 @@ except ImportError:
     _RAG_IMPORT_OK = False
 
 
-def run(repo_path, client, model):
-    """Scan code repository for quality issues."""
+def run(repo_path, client, model, uploaded_documents=None):
+    """
+    Scan code repository for quality issues.
+    
+    Args:
+        repo_path: Path to the repository
+        client: Groq client instance
+        model: Model name to use
+        uploaded_documents: Optional list of uploaded documents to index with RAG
+                           Format: [{'filename': 'doc.md', 'content': '...'}]
+    """
     
     # Collect all Python files recursively
     python_files = []
@@ -70,17 +79,29 @@ def run(repo_path, client, model):
     # ── RAG INITIALISATION ────────────────────────────────────────
     # Index the repository into the vector store so each file's
     # analysis prompt can be augmented with similar code patterns.
+    # Also index uploaded documents for additional context.
     rag_enabled = False
     rag = None
 
     if _RAG_IMPORT_OK:
         try:
             rag = RAGRetriever()
-            print(f"[DEBUG] Indexing {len(python_files)} files with RAG...")
-            rag.index_repository(python_files)
+            
+            # Combine code files and uploaded documents for indexing
+            files_to_index = python_files.copy()
+            
+            if uploaded_documents:
+                print(f"[DEBUG] Adding {len(uploaded_documents)} uploaded documents to RAG index...")
+                files_to_index.extend(uploaded_documents)
+            
+            print(f"[DEBUG] Indexing {len(files_to_index)} files with RAG ({len(python_files)} code + {len(uploaded_documents) if uploaded_documents else 0} docs)...")
+            rag.index_repository(files_to_index)
             rag_enabled = True
             stats = rag.get_stats()
             print(f"[DEBUG] RAG enabled — {stats['total_embeddings']} embeddings indexed")
+            
+            if uploaded_documents:
+                print(f"[DEBUG] Documents indexed: {', '.join([d['filename'] for d in uploaded_documents])}")
         except Exception as e:
             print(f"[DEBUG] RAG disabled: {e}")
             rag_enabled = False
@@ -123,44 +144,53 @@ def run(repo_path, client, model):
 
         prompt = f"""You are a senior Python security engineer and code reviewer.
 
-Analyse the file below for ALL real defects. Be thorough — a missed critical bug is worse than a false positive.
+Analyse the file below for REAL defects only. DO NOT report false positives.
 
 {rag_context}
 ## File to analyse
 {files_text}
 
-## What to check (go through every category)
+## CRITICAL RULES - READ CAREFULLY:
+1. **Only report issues you can ACTUALLY SEE in the code above**
+2. **DO NOT hallucinate files that don't exist** (e.g., if you see app.py, don't report issues in auth.py unless auth.py is shown)
+3. **DO NOT report normal library imports as security issues** (importing streamlit, dotenv, etc. is NOT insecure deserialization)
+4. **DO NOT report issues in code that isn't shown** (if file is truncated, only analyze what you can see)
+5. **Every issue MUST reference actual code from the file above** - include the actual line of code in your description
 
-### 🔴 Security (severity: critical)
-- Hardcoded secrets: passwords, API keys, tokens, private keys anywhere in the code
-- SQL injection: f-string or %-formatted queries, string concatenation in queries
-- Command injection: `os.system`, `subprocess` with user input, `eval()`, `exec()`
-- Insecure deserialization: `pickle.loads` on untrusted data
-- Sensitive data in logs: passwords, tokens, PII passed to print/logging
+## What to check (only report if you see it):
 
-### 🟠 Reliability (severity: high)
-- Missing try/except around file I/O, network calls, database operations
-- Functions that can crash on None input with no guard
-- Infinite loop risks, unclosed resources (files, connections)
-- Mutable default arguments (e.g. `def foo(x=[])`)
+### 🔴 Security (severity: critical) - ONLY if you see actual vulnerabilities:
+- **Hardcoded secrets**: Actual passwords, API keys, tokens visible in the code (e.g., password = "admin123")
+- **SQL injection**: String concatenation or f-strings building SQL queries with user input (e.g., query = f"SELECT * FROM users WHERE id = " + user_input)
+- **Command injection**: os.system(), subprocess.call() with unsanitized user input, eval() or exec() on user data
+- **Insecure deserialization**: pickle.loads() on untrusted data from network/files
+- **Sensitive data in logs**: Actual passwords, tokens, or PII being logged (e.g., print(user_password))
 
-### 🟡 Code Quality (severity: medium)
-- Functions longer than 40 lines or with cyclomatic complexity > 10 branches
-- Code duplication — identical or near-identical logic blocks
-- Magic numbers / magic strings with no explanation
-- Missing type hints on public functions
+### 🟠 Reliability (severity: high) - ONLY if you see actual risks:
+- **Missing error handling**: File I/O, network calls, or database operations with no try/except
+- **None handling**: Functions that will crash if passed None (e.g., `len(x)` with no None check)
+- **Resource leaks**: Files or connections opened but not closed
+- **Mutable defaults**: Function parameters with mutable defaults (e.g., `def foo(x=[]):`)
 
-### 🔵 Maintainability (severity: low)
-- Missing docstrings on public functions and classes
-- Unused imports or variables
-- Non-descriptive variable names (single letters outside loops)
-- TODO / FIXME / HACK comments left in production code
+### 🟡 Code Quality (severity: medium) - ONLY if you see actual issues:
+- **Long functions**: Functions over 50 lines or with >10 branches
+- **Code duplication**: Identical or near-identical code blocks repeated
+- **Magic values**: Unexplained numbers or strings (e.g., `if status == 42:`)
+- **Missing type hints**: Public functions without type annotations
+
+### 🔵 Maintainability (severity: low) - ONLY if you see actual issues:
+- **Missing docstrings**: Public functions/classes without docstrings
+- **Unused imports**: Imports that are never used in the code
+- **Poor naming**: Single-letter variables outside loops (e.g., `x = calculate_total()`)
+- **TODO comments**: TODO/FIXME/HACK comments in the code
 
 ## Output rules
-- Report ONLY real issues you can see in the code — do not hallucinate issues.
-- Every issue MUST have an exact file location (line number or function name).
-- Minimum 2 issues per file; maximum 15 total.
-- Return ONLY valid JSON — no markdown, no prose, no explanation.
+- Report ONLY issues you can PROVE exist in the code shown above
+- Include the ACTUAL line of code that has the issue in your description
+- Every issue MUST reference the exact file shown above (not other files)
+- If you can't find at least 2 real issues, that's OK - report what you find
+- Maximum 15 issues total
+- Return ONLY valid JSON — no markdown, no prose, no explanation
 
 ## Required JSON format
 {{

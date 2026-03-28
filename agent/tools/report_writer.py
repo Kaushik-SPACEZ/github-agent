@@ -32,11 +32,55 @@ def run(scanner_output, test_output, priority_output, client, model):
     low = priority_data.get("low", [])
     recommendations = priority_data.get("recommendations", [])
     
+    # Format issues in a more readable way for the LLM
+    critical_text = ""
+    if critical:
+        for i, issue in enumerate(critical, 1):
+            critical_text += f"\n{i}. File: {issue.get('file', 'unknown')}\n"
+            critical_text += f"   Issue: {issue.get('issue', 'No description')}\n"
+            critical_text += f"   Impact: {issue.get('impact', 'Not specified')}\n"
+            critical_text += f"   Effort: {issue.get('effort', 'Not specified')}\n"
+    else:
+        critical_text = "\nNone found."
+    
+    high_text = ""
+    if high:
+        for i, issue in enumerate(high, 1):
+            high_text += f"\n{i}. File: {issue.get('file', 'unknown')}\n"
+            high_text += f"   Issue: {issue.get('issue', 'No description')}\n"
+            high_text += f"   Impact: {issue.get('impact', 'Not specified')}\n"
+            high_text += f"   Effort: {issue.get('effort', 'Not specified')}\n"
+    else:
+        high_text = "\nNone found."
+    
+    medium_text = ""
+    if medium:
+        for i, issue in enumerate(medium, 1):
+            medium_text += f"\n{i}. File: {issue.get('file', 'unknown')}\n"
+            medium_text += f"   Issue: {issue.get('issue', 'No description')}\n"
+    else:
+        medium_text = "\nNone found."
+    
+    low_text = ""
+    if low:
+        for i, issue in enumerate(low, 1):
+            low_text += f"\n{i}. File: {issue.get('file', 'unknown')}\n"
+            low_text += f"   Issue: {issue.get('issue', 'No description')}\n"
+    else:
+        low_text = "\nNone found."
+    
+    recommendations_text = ""
+    if recommendations:
+        for i, rec in enumerate(recommendations, 1):
+            recommendations_text += f"\n{i}. {rec}"
+    else:
+        recommendations_text = "\nNo specific recommendations provided."
+
     prompt = f"""You are a principal engineer writing a code-quality audit report that will be read by both developers and non-technical stakeholders.
 
-## Data to compile into the report
+## IMPORTANT: You MUST use the actual data provided below. Do NOT make up generic content.
 
-### Scanner summary
+## Scanner Summary
 - Files analysed  : {summary.get('files_analyzed', 0)}
 - Total issues    : {summary.get('total_issues', 0)}
 - Critical        : {summary.get('critical', 0)}
@@ -44,66 +88,84 @@ def run(scanner_output, test_output, priority_output, client, model):
 - Medium          : {summary.get('medium', 0)}
 - Low             : {summary.get('low', 0)}
 
-### Critical issues ({len(critical)} found)
-{json.dumps(critical, indent=2)}
+## Critical Issues Found: {len(critical)}
+{critical_text}
 
-### High priority issues ({len(high)} found)
-{json.dumps(high, indent=2)}
+## High Priority Issues Found: {len(high)}
+{high_text}
 
-### Medium priority issues ({len(medium)} found)
-{json.dumps(medium, indent=2)}
+## Medium Priority Issues Found: {len(medium)}
+{medium_text}
 
-### Recommended actions
-{json.dumps(recommendations, indent=2)}
+## Low Priority Issues Found: {len(low)}
+{low_text}
 
-### Generated test cases
+## Recommended Actions
+{recommendations_text}
+
+## Generated Test Cases (first 1000 chars)
 {test_output[:1000]}
 
-## Report requirements
-
-Write a professional markdown report with EXACTLY these sections in this order. Do not skip any section. Do not add extra sections.
-
 ---
+
+## YOUR TASK
+
+Write a professional markdown report with EXACTLY these sections. You MUST include ALL issues listed above - do not skip any.
 
 # Code Quality Audit Report
 
 ## Executive Summary
-3-5 sentences. State: overall health verdict (healthy / needs attention / critical), total issues found, the single most urgent finding, and one positive observation if any.
+Write 3-5 sentences stating:
+1. Overall health verdict based on the {len(critical)} critical, {len(high)} high, {len(medium)} medium, {len(low)} low issues found
+2. The single most urgent finding from the critical/high issues above
+3. One positive observation if any
 
 ## 🔴 Critical Issues  *(must fix before next release)*
-For each critical issue:
-- **[filename — location]** Issue title
-  - **What**: one sentence describing the exact problem
-  - **Why it matters**: concrete real-world consequence (data breach, downtime, etc.)
-  - **How to fix**: specific code-level instruction, not generic advice
 
-If no critical issues: write "No critical issues found. ✅"
+CRITICAL: There are {len(critical)} critical issue(s). You MUST list each one below.
+
+{"For each critical issue listed above, write:" if critical else "Write: No critical issues found. ✅"}
+- **[filename]** Issue title
+  - **What**: Describe the exact problem from the data above
+  - **Why it matters**: Explain the real-world consequence
+  - **How to fix**: Provide specific code-level instruction
 
 ## 🟠 High Priority Issues  *(fix within this sprint)*
-Same format as critical. If more than 5, show top 5 and note "and N more."
+
+IMPORTANT: There are {len(high)} high priority issue(s). You MUST list each one below.
+
+{"For each high priority issue listed above, write the same format as critical issues." if high else "Write: No high priority issues found."}
 
 ## 🟡 Medium & Low Priority Issues  *(fix within the quarter)*
-Summarise in a short bulleted list — no need for full detail on each.
+
+There are {len(medium)} medium and {len(low)} low priority issues. Summarize them in a bulleted list:
+{"- List each medium and low issue from the data above" if (medium or low) else "- No medium or low priority issues found."}
 
 ## 🧪 Generated Test Cases
-Paste the test code as a fenced Python block. If no tests were generated, explain why.
+
+```python
+{test_output if test_output.strip() else "# No test cases were generated"}
+```
 
 ## ✅ Recommended Action Plan
-Numbered, ordered list — most urgent first. Each item must be a specific task a developer can pick up immediately (not "improve code quality").
+
+Based on the recommendations provided above, create a numbered list of specific tasks:
+{recommendations_text if recommendations else "1. Review all issues manually\n2. Prioritize fixes based on severity"}
 
 ## 🎫 Suggested Jira Tickets
-Create one ticket per critical and high issue:
-- **[PROJ-XX] Title** | Priority: Critical/High | Effort: quick/medium/large
-  - Description: one sentence
+
+Create one ticket per critical and high issue from the data above:
+{"- List each critical and high issue as a Jira ticket with format: **[PROJ-XX] Title** | Priority: Critical/High | Effort: quick/medium/large" if (critical or high) else "No critical or high priority issues require Jira tickets."}
 
 ---
 
-## Writing rules
-- Be specific — file names, line numbers, function names wherever possible.
-- Avoid filler phrases like "it is important to note" or "in order to".
-- Use plain language in the Executive Summary (non-technical readers will read it).
-- Use precise technical language in the issue sections (developers will act on it).
-- Total length: 500–750 words."""
+## CRITICAL RULES
+1. You MUST include EVERY issue from the data above - do not skip any
+2. If there are {len(critical)} critical issues, your report MUST show all {len(critical)} of them
+3. If there are {len(high)} high issues, your report MUST show all {len(high)} of them
+4. Do NOT write "No critical issues found" if critical issues exist in the data
+5. Be specific with file names and descriptions from the actual data provided
+6. Total length: 500–750 words"""
 
     # Call the LLM
     response = client.chat.completions.create(

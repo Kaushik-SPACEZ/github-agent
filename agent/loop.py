@@ -52,6 +52,9 @@
 
 from agent import planner, executor, reviewer
 
+# Reset reviewer loop counter at module load
+reviewer.reset_loop_counter()
+
 # ── CONFIGURATION ────────────────────────────────────────────────
 # MAX_LOOPS controls how many self-correction cycles the agent gets.
 # Why 3: enough retries to meaningfully improve quality, but not so
@@ -64,7 +67,7 @@ from agent import planner, executor, reviewer
 MAX_LOOPS = 3
 
 
-def run(repo_path, client, model, on_step, on_log):
+def run(repo_path, client, model, on_step, on_log, uploaded_documents=None):
     """
     Run the 5-step autonomous agent loop.
 
@@ -76,6 +79,8 @@ def run(repo_path, client, model, on_step, on_log):
                                 step:   "think" | "plan" | "execute" | "review" | "update"
                                 status: "active" | "done" | "failed" | "skipped"
         on_log    : callable  — UI callback: on_log(message) for activity log
+        uploaded_documents : list — optional list of uploaded documents for RAG indexing
+                                    Format: [{'filename': 'doc.md', 'content': '...'}]
 
     Returns:
         dict — tool results: {"code_scanner": str, "test_case_generator": str, "issue_prioritizer": str, "report_writer": str}
@@ -143,7 +148,7 @@ def run(repo_path, client, model, on_step, on_log):
         #       report_writer. Each tool builds on the previous output.
         on_step("execute", "active")
         try:
-            results = executor.run_plan(plan, repo_path, client, model, on_log)
+            results = executor.run_plan(plan, repo_path, client, model, on_log, uploaded_documents)
             final_results = results
             on_step("execute", "done")
         except Exception as e:

@@ -48,8 +48,18 @@ def _run_with_retry(fn, tool_name, on_log):
                 raise last_error
 
 
-def run_plan(plan, repo_path, client, model, on_log):
-    """Execute each step in the plan by routing to the correct tool."""
+def run_plan(plan, repo_path, client, model, on_log, uploaded_documents=None):
+    """
+    Execute each step in the plan by routing to the correct tool.
+    
+    Args:
+        plan: List of tool steps to execute
+        repo_path: Path to the repository
+        client: Groq client instance
+        model: Model name to use
+        on_log: Logging callback function
+        uploaded_documents: Optional list of uploaded documents for RAG
+    """
 
     results = {}
     
@@ -67,7 +77,7 @@ def run_plan(plan, repo_path, client, model, on_log):
         # ── ROUTE TO THE CORRECT TOOL ────────────────────────────────
         if tool == "code_scanner":
             results["code_scanner"] = _run_with_retry(
-                lambda: code_scanner.run(repo_path, client, model),
+                lambda: code_scanner.run(repo_path, client, model, uploaded_documents),
                 tool, on_log,
             )
 
